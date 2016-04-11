@@ -4,7 +4,7 @@
 # Student name and No.: Xu Fangyuuan 3035085530
 # Development platform: Ubuntu
 # Python version: 2.7.9
-# Version: 2.1
+# Version: 1.3
 
 
 from Tkinter import *
@@ -24,29 +24,25 @@ import select
 # p2pserver_sk is to receive the backward link, only one.
 # be_in_chatroom is the Flag for checking whether the client_sk has already in a chatroom
 
-#TODO:
-#Locks for multiple variables
-#Cannot send message through forward link
-#Self link
 
-myself = None
-forward_user = None
-user_list = []
-back_list = []
+myself = None  			#This is the user object of 'myself'
+forward_user = None 	#This is the user object of the forward peer 'I' have linked to
+user_list = []			#This is a list of user objects that is in 'my' chatroom
+back_list = []			#This is a list of user objects that has a forward link towards 'me'
 
-user_lock = threading.Lock()
-write_lock = threading.Lock()
-client_lock = threading.Lock()
-server_lock = threading.Lock()
-lock = threading.Lock()
+user_lock = threading.Lock()	#This is a lock to lock the user_list 
+write_lock = threading.Lock()	#This is a lock to lock the write socket list
+client_lock = threading.Lock()	#This is a lock to lock the p2pclient socket
+server_lock = threading.Lock()	#This is a lock to lock the p2pserver sokcet
+lock = threading.Lock()			#This is a general lock 
 
-keepalive_thread = None
-p2pclient_thread = None
-p2pserver_thread = None
-thread_List = []
+keepalive_thread = None 		#This is the thread that sends keepalive to the server 
+p2pclient_thread = None   		#This is the thread that sets forward link
+p2pserver_thread = None 		#This is the thread that accepts request of other users
+thread_List = []				#This is a list of thread that handles backward link users. 
 
-chatroom = ""
-be_in_chatroom = False
+chatroom = "" 					#This is the name of 'my' chatroom
+be_in_chatroom = False 			
 connected_to_server = False
 all_thread_running = True
 
@@ -144,9 +140,9 @@ def hand_shake(this_user):
 	except socket.error:
 		return False
 	else:
-		msg = p2pclient_sk.recv(1024)
+		msg = p2pclient_sk.recv(1024) #connection reset by peer 
 		if msg == "":
-			return False
+			print "Debug_handshake: empty message"
 		elif msg[0] == 'S':
 			lock.acquire()
 			forward_user = this_user
@@ -208,14 +204,8 @@ def update_user_list():
 		for u in temp_user_list:
 			if u not in user_list:
 				user_list.append(u)
-        
-        mark_list=[]
+
 		user_list.sort()
-        for u in back_list:
-            if u not in user_list:
-                mark_list.append(u)
-        for u in mark_list:
-            back_list.remove(u)
 		user_lock.release()
 
 def p2pserver():
@@ -226,17 +216,16 @@ def p2pserver():
 	p2pserver_sk.settimeout(1.0)
 	server_lock.release()
 
-	CmdWin.insert(1.0,"\nMy IP address: "+myself.getIP()+" My listening port: "+myself.getport())
 	while all_thread_running:
 		try:
-			new_sk, who = p2pserver_sk.accept()
+			new_sk, who = p2pserver_sk.accept() #TODO: timeout
 		except socket.timeout:
 			continue
 		msg = new_sk.recv(1024)
 		if msg[0] == 'P':
 			# acknowledge hand shake
 			info = msg[2:-4].split(':')
-			if chatroom == info.pop(0):
+			if chatroom == info.pop(0): #TODO: error message 
 				new_user = user(info.pop(0), info.pop(0), info.pop(0), info.pop(0))
 				try:
 					new_sk.send("S:"+str(myself.getid())+"::\r\n")
@@ -248,7 +237,7 @@ def p2pserver():
 					user_list.append(new_user)
 					user_list.sort()
 				else:
-					user_list[user_list.index(new_user)]=new_user #update message id
+					user_list[user_list.index(new_user)]=new_user #update message id 
 				write_sk_list.append(new_sk)
 				back_list.append(new_user)
 				new_thread = threading.Thread(target=socket_listen, args=(new_sk,))
@@ -271,6 +260,10 @@ def p2pclient():
 		start = 0
 		update_user_list()
 		user_lock.acquire()
+		#Debug
+		MsgWin.insert(1.0, "\n userlist updated")
+		for u in user_list:
+			MsgWin.insert(1.0, "\n"+str(u))
 
 		for u in user_list:
 			if u == myself:
@@ -288,33 +281,33 @@ def p2pclient():
 				p2pclient_sk.connect((temp_forward_user.getIP(), int(temp_forward_user.getport())))
 			except socket.error, error:
 				print "Cannot connect to forward user : ", user_list[start], "\n", error
-				time.sleep(1)
+				time.sleep(5)
 				continue
 			else:
 				if not hand_shake(temp_forward_user):
 					continue
-			CmdWin.insert(1.0, "\nSuccessfully link to the group -- via "+temp_forward_user.getname())
 			write_sk_list.append(p2pclient_sk)
 			socket_listen(p2pclient_sk)
-			CmdWin.insert(1.0, "\nFoward link broke")
+			MsgWin.insert(1.0, "\n Foward link broke")
 		else:
-			time.sleep(1)
+			time.sleep(5)
 
 
 def socket_listen(sockfd):
-	global all_thread_running, lock, write_sk_list, user_list, thread_List, p2pclient_sk, write_lock, myself
+	global all_thread_running, lock, write_sk_list, user_list, thread_List, p2pclient_sk, write_lock, myself 
 	sockfd.settimeout(1.0)
 	while all_thread_running:
 		try:
-			msg = sockfd.recv(1000)
+			msg = sockfd.recv(1000) #TODO: timeout 
 		except socket.timeout:
 			continue
 		except socket.error:
 			continue
 		else:
-			if msg != "":
+			print "Debug_socket_listen: ", msg
+			if msg != "": 
 
-				current_sender = None   #TODO: error messages
+				current_sender = None   #TODO: error messages 
 				pos = 1
 				new_pos = msg.find(':', pos+1)
 				roomname = msg[pos+1 : new_pos]
@@ -333,10 +326,12 @@ def socket_listen(sockfd):
 				message = msg[new_pos+1: new_pos+1+msg_len]
 
 				if roomname!= chatroom:
-					CmdWin.insert(1.0, "\nError: Received a message from another chatroom")
+					MsgWin.insert(1.0, "\nError: Received a message from another chatroom")
 				else:
 					user_lock.acquire()
+					print "Debug_socket_listen: ", temp_HID
 					for u in user_list:
+						print "Debug_socket_listen: ", u, " hash: ", u.gethash()
 						if u.gethash() == temp_HID:
 							current_sender = u
 					user_lock.release()
@@ -344,26 +339,26 @@ def socket_listen(sockfd):
 
 					if current_sender is None:
 						update_user_list()
-						MsgWin.insert(1.0, "\n["+temp_name+"] "+message)
+						MsgWin.insert(1.0, "\nReceived a message from a new user: ["+temp_name+"] "+message)
 						send_message(msg, sockfd)
-						CmdWin.insert(1.0, "\nRelay the message to other peer"+message)
 					elif not ((int(temp_msgID) > int(current_sender.getid()))):
-						#CmdWin.insert(1.0, "\nError: Received a message that has been seen before: " + str(temp_msgID) + " " + str(current_sender.getid())+" " + message)
+						MsgWin.insert(1.0, "\nError: Received a message that has been seen before: " + str(temp_msgID) + " " + str(current_sender.getid())+" " + message)
 					else:
 						lock.acquire()
 						current_sender.setid(temp_msgID)
 						lock.release()
 						MsgWin.insert(1.0, "\n["+temp_name+"] "+message)
 						send_message(msg, sockfd)
-						CmdWin.insert(1.0, "\nRelay the message to other peer"+message)
 			else:
 				MsgWin.insert(1.0, "\n socket close")
 				write_lock.acquire()
 				sockfd.close()
 				if sockfd in write_sk_list:
 					write_sk_list.remove(sockfd)
+				#if sockfd != p2pclient_sk:
+					#thread_List.remove(threading.currentThread()) #delete 
+					#back_list.remove(sockfd) #remove user
 				write_lock.release()
-                update_user_list();
 				return
 
 def send_message(msg, sockfd = None):
@@ -395,7 +390,7 @@ def do_List():
 
 	global connected_to_server, chatroom
 	# First try to connect
-	if connected_to_server == False:
+	if connected_to_server == False: 
 		try:
 			client_sk.connect((sys.argv[1],int(sys.argv[2])))
 		except socket.error, err:
@@ -403,7 +398,7 @@ def do_List():
 		else:
 			CmdWin.insert(1.0, "\nConnect to server at " + sys.argv[1] + ":" + sys.argv[2])
 			connected_to_server = True
-
+	
 	try:
 		client_sk.send("L::\r\n")
 	except socket.error, err:
@@ -424,14 +419,14 @@ def do_List():
 def do_Join():
 	global connected_to_server, be_in_chatroom, chatroom, myself
 
-	if connected_to_server == False:
+	if connected_to_server == False: 
 		try:
 			client_sk.connect((sys.argv[1],int(sys.argv[2])))
 		except socket.error, err:
 			print "Connection failed!\nError:", err
 		else:
 			CmdWin.insert(1.0, "\nConnect to server at " + sys.argv[1] + ":" + sys.argv[2])
-			connected_to_server = True
+			connected_to_server = True 
 
 	if userentry.get() == "":
 		return
@@ -453,10 +448,10 @@ def do_Join():
 			msg = client_sk.recv(1024)
 			if msg[0] == "M":
 				be_in_chatroom = True
-				keepalive_thread.start() # Start the keep alive thread
+				keepalive_thread.start() # Start the keep alive thread 
 				info = msg[2:-4].split(":")
 				while info:
-					new_user = user(info.pop(0),info.pop(0),info.pop(0))
+					new_user = user(info.pop(0),info.pop(0),info.pop(0)) 
 					if new_user == myself:
 						user_list.append(myself)
 					else:
@@ -472,7 +467,7 @@ def do_Send():
 	if message == "":
 		return
 	elif not be_in_chatroom:
-		return
+		return 
 	userentry.delete(0, END)
 	lock.acquire()
 	myself.setid(myself.getid()+1)
@@ -558,9 +553,11 @@ def main():
 	if len(sys.argv) != 4:
 		print "P2PChat.py <server address> <server port no.> <my port no.>"
 		sys.exit(2)
+	# TODO: define the exit behavior of the win
 	win.protocol("WM_DELETE_WINDOW", do_Quit)
 	win.mainloop()
 
+	#TODO: handle Keyboard interruption 
 
 if __name__ == "__main__":
 	main()
